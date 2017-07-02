@@ -88,9 +88,19 @@ class PriceSupplyCurve(object):
     def cost(self, supply, num):
         return self.reserve(supply + num) - self.reserve(supply)
 
-    def issued(self, supply, value):
+    def issued(self, supply, added_reserve):
         reserve = self.reserve(supply)
-        return self.supply(reserve + value) - self.supply(reserve)
+        return self.supply(reserve + added_reserve) - self.supply(reserve)
+
+    def mktcap(self, supply):
+        return self.price(supply) * supply
+
+    def supply_at_mktcap(self, m, skipped=0):
+        b, f = self.b, self.f
+        f = self.f
+        b = (self.b + skipped * self.f)
+        s = (-b + sqrt(b**2 - 4 * f * -m)) / (2 * f)
+        return s
 
 
 class ContinuousToken(object):

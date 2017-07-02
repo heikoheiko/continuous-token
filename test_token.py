@@ -26,7 +26,17 @@ def test_curve():
     assert value < 0
     assert num == curve.issued(supply, value)
     assert -curve.cost(supply, -1) < curve.cost(supply, 1)  # bid < ask
+    mktcap = supply * price
+    supply2 = curve.supply_at_mktcap(mktcap)
+    assert supply == supply2
 
+    # test mktcap
+    p = 100
+    s = curve.supply_at_price(p)
+    assert curve.price(s) == p
+    m = p * s
+    assert m == curve.mktcap(s)
+    assert curve.supply_at_mktcap(m) == s
 
 test_curve()
 
