@@ -1,22 +1,11 @@
 from ctoken import PriceSupplyCurve, xassert
 from math import sqrt
 
-"""
-Questions, is a high skipped reserve desirable?
-- what does it change for the team?
-
-- for different price, how much moves 1M buy the price?
-- how much can be bought till prices only go up?
-
-
-
-"""
-
 bf = 0.3
 M = 1000**2
 c = PriceSupplyCurve(factor=0.0001, base_price=0)
 
-reserve = 50 * M  # the invested amount
+reserve = 50 * M  # the total proceeds
 s = c.supply(reserve)
 xassert(c.reserve(s), reserve)
 p = c.price(s)  # all bought at this price

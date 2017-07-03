@@ -71,8 +71,9 @@ class Simulation(object):
 
     def report(self):
         a = 'A' if self.ct.isauction else 'T'
-        s = '{} ask:{:.2f} bid:{:.2f} mktcap:{:,.0f} v:{:,.0f} mv:{:,.0f} reserve:{:,.0f}'
-        print s.format(self.ct.auction.elapsed, self.ct.ask, self.ct.bid, self.ct.mktcap, self.ct.valuation, self.ct.max_valuation, self.ct.reserve_value)
+        s = '{} ask:{:.2f} bid:{:.2f} mktcap:{:,.0f}  maxvaluation:{:,.0f} valuation:{:,.0f} reserve:{:,.0f} supply:{:,.0f}'
+        print s.format(self.ct.auction.elapsed, self.ct.ask, self.ct.bid, self.ct.mktcap,
+                       self.ct.max_valuation, self.ct.valuation, self.ct.reserve_value, self.ct.token.supply)
 
     def tick(self, **kargs):
         d = dict(time=self.ct.auction.elapsed,
@@ -89,7 +90,6 @@ class Simulation(object):
                  CT_Notional_Supply=self.ct._notional_supply,
                  CT_Simulated_Supply=self.ct._simulated_supply,
                  CT_Simulated_Price=self.ct.curve_price_auction,
-                 CT_Skipped_Supply=self.ct._skipped_supply,
                  CT_Spread=self.ct.ask - self.ct.bid
                  )
         d.update(kargs)
@@ -109,47 +109,27 @@ class Simulation(object):
             self.tick()
             if not self.ct.isauction:
                 break
+        self.report()
+        assert self.ct.auction.ended
+        assert self.ct.token.supply > 0
 
-    def run_trading(self, max_elapsed, stddev, period_factor, initial_valuation=None):
+    def run_trading(self, max_elapsed, stddev, period_factor):
         ct = self.ct
+        assert ct.token.supply > 0
+        assert not ct.isauction
+        ex_price = self.ct.ask
         steps = (max_elapsed - ct.auction.elapsed) / self.step
         median = period_factor ** (1 / steps)
-        mkt_valuation = initial_valuation or self.ct.valuation
-        assert mkt_valuation > 0
 
         while ct.auction.elapsed < max_elapsed:
             ct.auction.elapsed += self.step
             # random walk on valuation
-            mkt_valuation *= random.normalvariate(median, stddev)
-            # convert to exchange price
-            spread = ct.ask - ct.bid
-
-            ct_valuation = ct.valuation or ct.max_valuation
-            ct_valuation = ct.max_valuation
-            assert ct_valuation > 0
-
-            f = mkt_valuation / ct_valuation
-            ex_price = ct.bid + spread * f
-            print ex_price, ct.ask, spread, f, mkt_valuation, ct_valuation
-
-            if self.ticker:
-                assert self.ticker[-1]['Market_Price'] >= 0.9 * ex_price
-
+            ex_price *= random.normalvariate(median, stddev)
             if ex_price > ct.ask:
-                assert ct_valuation < mkt_valuation, (ct_valuation, mkt_valuation)
-                f = (ct.reserve_value / ct_valuation) or 1
-                added_reserve = f * (mkt_valuation - ct_valuation)
-                print added_reserve, f
-                ct.create(added_reserve)
-                # FIXME
-                # assert ct_valuation > mkt_valuation, (ct_valuation, mkt_valuation)
-                print self.ticker[-1]
-                print ex_price, ct.ask, spread, f, mkt_valuation, ct_valuation
-                # assert False
-
-            self.tick(Market_Price=ex_price,
-                      MktCap=ex_price * ct.token.supply,
-                      Valuation=mkt_valuation)
+                added_reserve = ct.curve.reserve_at_price(ex_price) \
+                    - ct.curve.reserve_at_price(ct.ask)
+                ct.create(added_reserve, 'market buyer')
+            self.tick(Market_Price=ex_price)
 
 
 def main():
@@ -163,14 +143,10 @@ def main():
 
     sim = Simulation(ct, investments[:])
 
-    if False:
-        sim.run_auction(3600 * 48)
+    sim.run_auction(3600 * 48)
+    sim.run_trading(ct.auction.elapsed * 2, stddev=0.01, period_factor=2.)
 
     tstart = len(sim.ticker)
-
-    if True:
-        sim.run_trading(3600 * 12, stddev=0.025, period_factor=1.5,
-                        initial_valuation=median_valuation)
 
     if False:  # calc changes
         e = sim.ticker[-1]
@@ -193,7 +169,7 @@ def main():
     print 'not invested', len(sim.investments)
     print len(sim.ticker)
 
-    draw(sim.ticker)
+    # draw(sim.ticker)
 
 if __name__ == '__main__':
     main()

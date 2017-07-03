@@ -50,7 +50,7 @@ def draw(ticks):
     chart('CT_Supply', traces3)
     #chart('CT_Notional_Supply', traces3)
     #chart('CT_Simulated_Supply', traces3)
-    chart('CT_Skipped_Supply', traces3)
+    # chart('CT_Skipped_Supply', traces3)
     chart('CT_Arithmetic_Supply', traces3)
 
     # Changes
@@ -75,4 +75,4 @@ def draw(ticks):
             fig.append_trace(t, i + 1, 1)
 
     fig['layout'].update(title='Continuous Token')
-    plot_url = py.plot(fig, filename='continuoustoken3  ')
+    plot_url = py.plot(fig, filename='continuoustoken4')
