@@ -186,7 +186,7 @@ class ContinuousToken(object):
         xassert(self.token.supply, self.curve.supply(self.reserve_value))
         # assert it is not used anymore, even if tokens would be destroyed
         self.auction.ended = True
-        assert self.token.supply == total_issuance
+        xassert(self.token.supply, total_issuance)
         assert self.token.supply > 0
         print 'supply', self.token.supply
 

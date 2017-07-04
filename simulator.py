@@ -101,7 +101,6 @@ class Simulation(object):
             # valuation = self.ct.valuation_after_create(i.value)
             while self.investments[0].valuation > self.ct.max_valuation:  # FIXME slippage
                 i = self.investments.pop(0)
-                # print self.ct.ask, valuation, i
                 self.ct.create(i.value, i)
                 self.report()
                 if not self.investments:
@@ -135,10 +134,10 @@ class Simulation(object):
 def main():
     random.seed(43)
     ct = gen_token()
-    num_investors = 30
+    num_investors = 3000
     total_investable = 100 * 10**6
     median_valuation = 50 * 10**6
-    std_deviation = 0.5 * median_valuation
+    std_deviation = 0.25 * median_valuation
     investments = gen_investments(num_investors, total_investable, median_valuation, std_deviation)
 
     sim = Simulation(ct, investments[:])
