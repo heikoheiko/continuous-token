@@ -43,12 +43,16 @@ contract Mint {
     function mktcap() constant {}; //
     function valuation() constant {}; //  # (ask - bid) * supply
     /// non constant funcs
+    function buy_prealloc(recipient) atStage(Stages.MintSetup) isOwner {
+        // allows to buy before the auction
+    }
     function buy() atStage(Stages.TradingStarted) {
         // msg.sender, msg.value
-        // Q: should we have a fallback function which triggers buy?
         // sent eth is implicity received as reserve, which is the ETH at the Mint account (this.value)
         // calc the num of newly issued tokens based on the eth amount sent
         // call token.issue(msg.sender, num)
+        //
+        // Q: should we have a fallback function which triggers buy?
     }
     function sell(num) atStage(Stages.TradingStarted) {
         // num tokens are destroyed from msg.sender and the purchase cost is credited to him
@@ -91,7 +95,10 @@ contract DutchAuction {
         // true if this.price > mint.curve_price_at_reserve(this.value)
         // modelled as atStage(Stages.AuctionStarted)
     };
-    function missing_reserve_to_end_auction() constant {};
+    function missing_reserve_to_end_auction() constant {
+        vreserve = Mint.curve_reserve_at_price();
+        return vreserve - this.value - Mint.reserve;
+    };
     function max_mktcap() constant {}; // the mktcap if the auction would end at the current price
     function max_valuation() constant {}; // the valuation if the auction would end at the current price
     function order() atStage(Stages.AuctionStarted) {
@@ -109,9 +116,13 @@ contract DutchAuction {
     function finalize_auction() atStage(Stages.AuctionStarted) {
         // require this.price <= mint.curve_price_at_reserve(this.value)
         // transition to next Stages.AuctionEnded
+        // memorize the received funds
         received_value = this.value;
-        total_issuance = Mint.curve.supply(reserve + Mint.value); // note, there could be a reserve already from the prealloc
-        Mint.funds_from_auction.value(this.value);  // send funds
+        // calc the same price for everyone
+        // note, there could be a reserve and supply already from the prealloc
+        total_issuance = Mint.curve.supply(received_value + Mint.value) - Mint.supply;
+        // send funds
+        Mint.funds_from_auction.value(this.value);
         };
     function claimTokens(recipients) atStage(Stages.AuctionEnded) {
         // called multiple times (gas limit!) until all bidders got their tokens
