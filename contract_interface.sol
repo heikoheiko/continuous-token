@@ -1,6 +1,6 @@
 contract Token is StandardToken {
     // token contract just manages tokens, has no idea of issuance/destroying price or policy
-    function Token(prealloc) {}; //
+    function Token() {}; //
     function registerMint(address _mint) isOwner {}; // registeres the mint address
     function totalSupply() {}; //
     function transfer(_to, value) {}; //
