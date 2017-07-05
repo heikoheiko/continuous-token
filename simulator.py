@@ -54,7 +54,7 @@ def gen_investments(num_investors, total_investable, median_valuation, std_devia
 
 
 def gen_token():
-    curve = PriceSupplyCurve(factor=0.0001, base_price=5)
+    curve = PriceSupplyCurve(factor=0.000001, base_price=1)
     auction = Auction(factor=10**6, const=10**3)
     beneficiary = Beneficiary(issuance_fraction=0.3)
     ct = ContinuousToken(curve, beneficiary, auction)
@@ -96,31 +96,34 @@ class Simulation(object):
         self.ticker.append(d)
 
     def run_auction(self, max_elapsed):
-        while self.ct.auction.elapsed < max_elapsed:
+        while not self.ct.auction.ended:
             self.ct.auction.elapsed += self.step
             # valuation = self.ct.valuation_after_create(i.value)
             while self.investments[0].valuation > self.ct.max_valuation:  # FIXME slippage
                 i = self.investments.pop(0)
                 self.ct.create(i.value, i)
-                self.report()
-                if not self.investments:
+                if self.ct.auction.ended:
+                    assert self.investments, 'increase the invstable amount'
+                    self.report()
                     break
+                self.report()
             self.tick()
             if not self.ct.isauction:
                 break
-        self.report()
-        assert self.ct.auction.ended
+        assert self.ct.auction.ended, 'increase the invstable amount'
         assert self.ct.token.supply > 0
 
-    def run_trading(self, max_elapsed, stddev, period_factor):
+    def run_trading(self, max_elapsed, stddev, final_price):
         ct = self.ct
         assert ct.token.supply > 0
         assert not ct.isauction
         ex_price = self.ct.ask
         steps = (max_elapsed - ct.auction.elapsed) / self.step
+        period_factor = final_price / ct.ask
         median = period_factor ** (1 / steps)
 
-        while ct.auction.elapsed < max_elapsed:
+        # while ct.auction.elapsed < max_elapsed:
+        while ex_price < final_price:
             ct.auction.elapsed += self.step
             # random walk on valuation
             ex_price *= random.normalvariate(median, stddev)
@@ -128,6 +131,7 @@ class Simulation(object):
                 added_reserve = ct.curve.reserve_at_price(ex_price) \
                     - ct.curve.reserve_at_price(ct.ask)
                 ct.create(added_reserve, 'market buyer')
+                self.report()
             self.tick(Market_Price=ex_price)
 
 
@@ -135,15 +139,21 @@ def main():
     random.seed(43)
     ct = gen_token()
     num_investors = 3000
-    total_investable = 100 * 10**6
+    total_investable = 400 * 10**6
     median_valuation = 50 * 10**6
+    final_mktcap = 4 * median_valuation
     std_deviation = 0.25 * median_valuation
     investments = gen_investments(num_investors, total_investable, median_valuation, std_deviation)
 
     sim = Simulation(ct, investments[:])
 
+    print 'Running Auction'
     sim.run_auction(3600 * 48)
-    sim.run_trading(ct.auction.elapsed * 2, stddev=0.01, period_factor=2.)
+
+    print 'Running Trading'
+    price_at_mktcap = ct.curve.price(ct.curve.supply_at_mktcap(final_mktcap))
+    price_at_mktcap /= (1 - ct.beneficiary.fraction)
+    sim.run_trading(ct.auction.elapsed * 2, stddev=0.005, final_price=price_at_mktcap)
 
     tstart = len(sim.ticker)
 
@@ -168,7 +178,7 @@ def main():
     print 'not invested', len(sim.investments)
     print len(sim.ticker)
 
-    # draw(sim.ticker)
+    draw(sim.ticker)
 
 if __name__ == '__main__':
     main()

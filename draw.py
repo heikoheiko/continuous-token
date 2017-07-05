@@ -9,8 +9,10 @@ from plotly import tools
 def draw(ticks):
 
     if True:  # remove most of initial auction
-        ticks_r = [t for t in ticks if t['CT_Reserve'] > 0]
-        ticks = ticks[-int(len(ticks_r) * 1.5):]
+        max_mkt_cap = max([t['MktCap'] for t in ticks])
+        ticks = [t for t in ticks if t['Max_Valuation'] < max_mkt_cap]
+        # ticks_r = [t for t in ticks if t['CT_Reserve'] > 0]
+        # ticks = ticks[-int(len(ticks_r) * 1.5):]
 
     MARKETSIM = bool([t for t in ticks if 'Market_Price' in t])
 

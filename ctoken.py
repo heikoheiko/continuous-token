@@ -235,7 +235,8 @@ class ContinuousToken(object):
 
     @property
     def bid(self):
-        if not self.reserve_value:
+        # if not self.reserve_value:
+        if self.isauction:
             return 0
         bid = self._purchase_cost(1)
         assert bid <= self.ask, (bid, self.ask)
