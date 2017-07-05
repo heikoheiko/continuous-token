@@ -50,23 +50,6 @@ class Token(object):
         return self.accounts.get(address, 0)
 
 
-class Auction(object):
-
-    def __init__(self, factor, const):
-        self.factor = factor
-        self.const = const
-        self.elapsed = 0
-        self.value_by_buyer = {}
-        self.ended = False
-
-    def order(self, recipient, value):
-        self.value_by_buyer[recipient] = self.value_by_buyer.get(recipient, 0) + value
-
-    @property
-    def price(self):
-        return self.factor / (self.elapsed + self.const)
-
-
 class PriceSupplyCurve(object):
 
     def __init__(self, factor=1., base_price=0):
@@ -75,6 +58,9 @@ class PriceSupplyCurve(object):
 
     def price(self, supply):
         return self.b + self.f * supply
+
+    def price_at_reserve(self, reserve):
+        return self.price(self.supply(reserve))
 
     def supply(self, reserve):
         return (-self.b + sqrt(self.b**2 + 2 * self.f * reserve)) / self.f
@@ -108,106 +94,45 @@ class PriceSupplyCurve(object):
         return s
 
 
-class ContinuousToken(object):
+class Mint(object):
 
     def __init__(self, curve, beneficiary, auction):
         self.curve = curve
         self.auction = auction
+        self.auction.mint = self
         self.beneficiary = beneficiary
         self.auction = auction
         self.token = Token()
-        self.reserve_value = 0
+        self.reserve = 0
 
     # supplies
 
     @property
     def _notional_supply(self):
         """"
-        supply according to reserve_value
+        supply according to reserve
         """
-        return self.curve.supply(self.reserve_value)
-
-    @property
-    def _simulated_supply(self):
-        """
-        current auction price converted to additional supply
-        note: this is virtual skipped supply,
-        so we must not include the skipped supply
-        """
-        if not self.auction.ended and self.auction.price >= self.curve.b:
-            return self.curve.supply_at_price(self.auction.price)
-        return 0
-
-    @property
-    def _arithmetic_supply(self):
-        if self.isauction:
-            return self._simulated_supply
-        return self._notional_supply
+        return self.curve.supply(self.reserve)
 
     # cost of selling, purchasing tokens
 
     def _sale_cost(self, num):  # cost
         assert num >= 0
         added = num / (1 - self.beneficiary.fraction)
-        return self.curve.cost(self._arithmetic_supply, added)
+        return self.curve.cost(self._notional_supply, added)
 
     def _purchase_cost(self, num):
         "the value offered if tokens are bought back"
         if not self.token.supply:
             return 0
         assert num >= 0 and num <= self.token.supply
-        c = self.reserve_value * num / self.token.supply
+        c = self.reserve * num / self.token.supply
         return c
-
-    # auction specific methods
-
-    @property
-    def isauction(self):
-        return (not self.auction.ended) and self._simulated_supply >= self._notional_supply
-
-    @property
-    def missing_reserve_to_end_auction(self):
-        return max(0, self.curve.reserve(self._simulated_supply) - self.reserve_value)
-
-    def finalize_auction(self):
-        assert self._notional_supply >= self._simulated_supply
-        assert not self.auction.ended
-        # all orders get tokens at the current price
-        price = self.ask
-        total_issuance = self.curve.supply(self.reserve_value)
-        print 'finalizing auction at price:{}, issuing:{:,.0f}'.format(price, total_issuance)
-
-        for recipient, value in self.auction.value_by_buyer.items():
-            num_issued = total_issuance * value / self.reserve_value
-            # print num_issued, value, price
-            self._issue(num_issued, recipient)
-
-        xassert(self.curve.reserve(self.token.supply), self.reserve_value)
-        xassert(self.token.supply, self.curve.supply(self.reserve_value))
-        # assert it is not used anymore, even if tokens would be destroyed
-        self.auction.ended = True
-        xassert(self.token.supply, total_issuance)
-        assert self.token.supply > 0
-        print 'supply', self.token.supply
 
     # public functions
 
-    def create(self, value, recipient=None):
-        if self.isauction:
-            return self._create_during_auction(value, recipient)
-        return self._create(value, recipient)
-
-    def _create_during_auction(self, value, recipient=None):
-        if value > self.missing_reserve_to_end_auction:
-            print "buy ends auction, need to send some tokens back"
-            value = max(value, self.missing_reserve_to_end_auction)
-        self.reserve_value += value
-        self.auction.order(recipient, value)
-        if not self.isauction:  # this call ended the auction
-            self.finalize_auction()
-
-    def _create(self, value, recipient=None):
-        self.reserve_value += value
+    def buy(self, value, recipient=None):
+        self.reserve += value
         s = self._notional_supply
         issued = self.curve.issued(s, value)
         return self._issue(issued, recipient)
@@ -222,12 +147,16 @@ class ContinuousToken(object):
     def destroy(self, num, owner=None):
         value = self._purchase_cost(num)
         self.token.destroy(num, owner)  # can throw
-        assert value < self.reserve_value or xassert(value, self.reserve_value)
-        value = min(value, self.reserve_value)
-        self.reserve_value -= value
+        assert value < self.reserve or xassert(value, self.reserve)
+        value = min(value, self.reserve)
+        self.reserve -= value
         return value
 
     # public const functions
+
+    @property
+    def isauction(self):
+        return not self.auction.ended
 
     @property
     def ask(self):
@@ -235,7 +164,7 @@ class ContinuousToken(object):
 
     @property
     def bid(self):
-        # if not self.reserve_value:
+        # if not self.reserve:
         if self.isauction:
             return 0
         bid = self._purchase_cost(1)
@@ -243,11 +172,7 @@ class ContinuousToken(object):
         return bid
 
     @property
-    def curve_price_auction(self):
-        return self.curve.cost(self._arithmetic_supply, 1)
-
-    @property
-    def curve_price(self):
+    def price(self):
         return self.curve.cost(self._notional_supply, 1)
 
     @property
@@ -256,13 +181,74 @@ class ContinuousToken(object):
 
     @property
     def valuation(self):  # (ask - bid) * supply
-        return max(0, self.mktcap - self.reserve_value)
+        return max(0, self.mktcap - self.reserve)
+
+
+class Auction(object):
+
+    def __init__(self, factor, const):
+        self.factor = factor
+        self.const = const
+        self.elapsed = 0
+        self.value_by_buyer = {}
+        self.ended = False
+        self.mint = None  # set by mint
+        self.reserve = 0
+
+    @property
+    def price(self):
+        return self.factor / (self.elapsed + self.const)
+
+    @property
+    def combined_reserve(self):
+        return self.reserve + self.mint.reserve
+
+    @property
+    def missing_reserve_to_end_auction(self):
+        ask_price = self.price
+        curve_price = ask_price * (1 - self.mint.beneficiary.fraction)
+        target = self.mint.curve.reserve_at_price(curve_price)
+        return max(0, target - self.reserve)
+
+    def order(self, recipient, value):
+        value = min(value, self.missing_reserve_to_end_auction)  # FXIME refund
+        self.value_by_buyer[recipient] = self.value_by_buyer.get(recipient, 0) + value
+        self.reserve += value
+        # print self.reserve, value, self.price
+        if self.missing_reserve_to_end_auction == 0:  # this call ended the auction
+            self.finalize_auction()
+
+    def finalize_auction(self):
+        mint_ask = self.mint.curve.price_at_reserve(
+            self.combined_reserve) / (1 - self.mint.beneficiary.fraction)
+        assert self.price <= mint_ask
+        assert not self.ended  # call only once
+        self.ended = True
+        # all orders get tokens at the current price
+        price = self.price
+        total_issuance = self.mint.curve.supply(self.reserve) - self.mint.token.supply
+        print 'finalizing auction at price:{}, issuing:{:,.0f}'.format(price, total_issuance)
+
+        for recipient, value in self.value_by_buyer.items():
+            num_issued = total_issuance * value / self.reserve
+            # print num_issued, value, price
+            self.mint._issue(num_issued, recipient)
+        # transfer reserve
+        self.mint.reserve = self.reserve
+        xassert(self.mint.curve.reserve(self.mint.token.supply), self.reserve)
+        xassert(self.mint.token.supply, self.mint.curve.supply(self.reserve))
+        self.reserve = 0
+
+        xassert(self.mint.token.supply, total_issuance)
+        assert self.mint.token.supply > 0
+        print 'supply', self.mint.token.supply
 
     @property
     def max_mktcap(self):
-        vsupply = self.curve.supply_at_price(self.ask)
-        return self.ask * vsupply
+        vsupply = self.mint.curve.supply_at_price(self.price)
+        return self.price * vsupply
 
     @property
     def max_valuation(self):  # FIXME
-        return self.max_mktcap * self.beneficiary.fraction
+        return self.max_mktcap * self.mint.beneficiary.fraction
+        # return self.max_mktcap - self.reserve

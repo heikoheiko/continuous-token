@@ -53,7 +53,7 @@ def draw(ticks):
     #chart('CT_Notional_Supply', traces3)
     #chart('CT_Simulated_Supply', traces3)
     # chart('CT_Skipped_Supply', traces3)
-    chart('CT_Arithmetic_Supply', traces3)
+    #chart('CT_Arithmetic_Supply', traces3)
 
     # Changes
     if False and MARKETSIM:
