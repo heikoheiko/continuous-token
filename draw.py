@@ -8,13 +8,12 @@ from plotly import tools
 
 def draw(ticks):
 
-    if True:  # remove most of initial auction
+    if False:  # remove most of initial auction
         max_mkt_cap = max([t['MktCap'] for t in ticks])
         ticks = [t for t in ticks if t['Max_Valuation'] < max_mkt_cap]
-        # ticks_r = [t for t in ticks if t['CT_Reserve'] > 0]
-        # ticks = ticks[-int(len(ticks_r) * 1.5):]
-
-    MARKETSIM = bool([t for t in ticks if 'Market_Price' in t])
+    else:
+        ticks_r = [t for t in ticks if t['Reserve'] > 0]
+        ticks = ticks[-int(len(ticks_r) * 1.5):]
 
     def tdata(key):
         return [(t['time'], t[key]) for t in ticks if key in t]
@@ -35,30 +34,26 @@ def draw(ticks):
         chart(key, traces2)
 
     # PRICES
-    chart('CT_Sale_Price')
-    if MARKETSIM:
-        chart('Market_Price')
-    chart('CT_Simulated_Price')
-    chart('CT_Purchase_Price')
-    chart('CT_Reserve_Based_Price')
+
+    chart('Auction_Price')
+    chart('Purchase_Price')
+    chart('Reserve_Based_Price')
+    chart('Sale_Price')
 
     # Valuations
     chart2('MktCap')
-    chart2('CT_Reserve')
+    chart2('Reserve')
     chart2('Max_Valuation')
     chart2('Valuation')
 
     # Supplies
-    chart('CT_Supply', traces3)
-    #chart('CT_Notional_Supply', traces3)
-    #chart('CT_Simulated_Supply', traces3)
-    # chart('CT_Skipped_Supply', traces3)
-    #chart('CT_Arithmetic_Supply', traces3)
+    chart('Supply', traces3)
+    chart('Reserve_Based_Supply', traces3)
 
     # Changes
     if False and MARKETSIM:
-        for key in ['CT_Supply', 'CT_Sale_Price', 'CT_Purchase_Price', 'CT_Spread',
-                    'MktCap', 'Valuation', 'CT_Reserve', 'Market_Price']:
+        for key in ['Supply', 'Sale_Price', 'Purchase_Price', 'Spread',
+                    'MktCap', 'Valuation', 'Reserve']:
             chart('Change_' + key, traces4)
 
     ######

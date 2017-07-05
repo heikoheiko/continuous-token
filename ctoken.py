@@ -36,7 +36,7 @@ class Token(object):
             self.accounts[recipient] = 0
         self.accounts[recipient] += num
 
-    def destroy(self, num, owner):
+    def sell(self, num, owner):
         if self.accounts[owner] < num:
             raise InsufficientFundsError('{} < {}'.format(self.accounts[owner], num))
         self.accounts[owner] -= num
@@ -108,7 +108,7 @@ class Mint(object):
     # supplies
 
     @property
-    def _notional_supply(self):
+    def supply_by_reserve(self):
         """"
         supply according to reserve
         """
@@ -119,7 +119,7 @@ class Mint(object):
     def _sale_cost(self, num):  # cost
         assert num >= 0
         added = num / (1 - self.beneficiary.fraction)
-        return self.curve.cost(self._notional_supply, added)
+        return self.curve.cost(self.supply_by_reserve, added)
 
     def _purchase_cost(self, num):
         "the value offered if tokens are bought back"
@@ -133,7 +133,7 @@ class Mint(object):
 
     def buy(self, value, recipient=None):
         self.reserve += value
-        s = self._notional_supply
+        s = self.supply_by_reserve
         issued = self.curve.issued(s, value)
         return self._issue(issued, recipient)
 
@@ -144,13 +144,17 @@ class Mint(object):
         self.token.issue(seigniorage, self.beneficiary)
         return num_sold
 
-    def destroy(self, num, owner=None):
+    def sell(self, num, owner=None):
         value = self._purchase_cost(num)
-        self.token.destroy(num, owner)  # can throw
+        self.token.sell(num, owner)  # can throw
         assert value < self.reserve or xassert(value, self.reserve)
         value = min(value, self.reserve)
         self.reserve -= value
         return value
+
+    def burn(self, num, owner=None):
+        "project might want to burn tokens, this increases the floor"
+        self.token.sell(num, owner)  # can throw
 
     # public const functions
 
@@ -173,7 +177,7 @@ class Mint(object):
 
     @property
     def price(self):
-        return self.curve.cost(self._notional_supply, 1)
+        return self.curve.cost(self.supply_by_reserve, 1)
 
     @property
     def mktcap(self):

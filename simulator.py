@@ -72,21 +72,25 @@ class Simulation(object):
     def reserve(self):
         return self.mint.reserve + self.auction.reserve
 
+    @property
+    def reserve_based_price(self):
+        return self.mint.curve.price_at_reserve(self.reserve) / (1 - self.mint.beneficiary.fraction)
+
     def tick(self, **kargs):
 
         d = dict(time=self.auction.elapsed,
-                 CT_Sale_Price=self.ask,
-                 CT_Purchase_Price=self.mint.bid,
+                 Sale_Price=self.ask,
+                 Purchase_Price=self.mint.bid,
                  MktCap=self.mint.mktcap,
                  Valuation=self.mint.valuation,
                  Max_MktCap=self.maxmktcap,
                  Max_Valuation=self.maxvaluation,
-                 CT_Reserve=self.reserve,
-                 CT_Reserve_Based_Price=self.mint.price,
-                 CT_Supply=self.mint.token.supply,
-                 CT_Notional_Supply=self.mint._notional_supply,
-                 CT_Simulated_Price=self.auction.price,
-                 CT_Spread=self.mint.ask - self.mint.bid
+                 Reserve=self.reserve,
+                 Reserve_Based_Price=self.reserve_based_price,
+                 Supply=self.mint.token.supply,
+                 Reserve_Based_Supply=self.mint.curve.supply(self.reserve),
+                 Auction_Price=self.auction.price,
+                 Spread=self.mint.ask - self.mint.bid
                  )
         d.update(kargs)
         self.ticker.append(d)
@@ -159,7 +163,7 @@ def main():
     num_investors = 3000
     total_investable = 400 * 10**6
     median_valuation = 50 * 10**6
-    final_mktcap = 4 * median_valuation
+
     std_deviation = 0.25 * median_valuation
     investments = gen_investments(num_investors, total_investable, median_valuation, std_deviation)
 
@@ -169,6 +173,7 @@ def main():
     sim.run_auction(3600 * 48)
 
     print 'Running Trading'
+    final_mktcap = 4 * mint.mktcap
     price_at_mktcap = mint.curve.price(mint.curve.supply_at_mktcap(final_mktcap))
     price_at_mktcap /= (1 - mint.beneficiary.fraction)
     sim.run_trading(mint.auction.elapsed * 2, stddev=0.005, final_price=price_at_mktcap)
@@ -196,7 +201,7 @@ def main():
     print 'not invested', len(sim.investments)
     print len(sim.ticker)
 
-    # draw(sim.ticker)
+    draw(sim.ticker)
 
 if __name__ == '__main__':
     main()
