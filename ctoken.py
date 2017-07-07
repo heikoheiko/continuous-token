@@ -212,7 +212,7 @@ class Auction(object):
         ask_price = self.price
         curve_price = ask_price * (1 - self.mint.beneficiary.fraction)
         target = self.mint.curve.reserve_at_price(curve_price)
-        return max(0, target - self.reserve)
+        return max(0, target - (self.reserve + self.mint.reserve))
 
     def order(self, recipient, value):
         value = min(value, self.missing_reserve_to_end_auction)  # FXIME refund
@@ -220,12 +220,16 @@ class Auction(object):
         self.reserve += value
         # print self.reserve, value, self.price
         if self.missing_reserve_to_end_auction == 0:  # this call ended the auction
+            xassert(self.price, self._mint_ask)
             self.finalize_auction()
 
+    @property
+    def _mint_ask(self):
+        return self.mint.curve.price_at_reserve(self.combined_reserve) \
+            / (1 - self.mint.beneficiary.fraction)
+
     def finalize_auction(self):
-        mint_ask = self.mint.curve.price_at_reserve(
-            self.combined_reserve) / (1 - self.mint.beneficiary.fraction)
-        assert self.price <= mint_ask
+        xassert(self.price, self._mint_ask)
         assert not self.ended  # call only once
         self.ended = True
         # all orders get tokens at the current price
