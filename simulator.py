@@ -5,7 +5,7 @@ Exchange contract
 Setup:
     - Continuous Token with Auction
     - Exchange
-    - set of investors with total investable amount
+    - set of bidders with total purchase_amount
         - with different normal distributed limit prices
         - place buy orders at an exchange
     - auction starts
@@ -24,35 +24,36 @@ Observables:
     - valuation
 
 Parameters:
-    - total investable amount
-    - pareto distributon of investment per investor
+    - total purchase_amount
+    - pareto distributon of order value per bidder
     - normal distribution of valuation, median
-    - num investors
+    - num bidders
 """
 from __future__ import division
 import random
 from operator import attrgetter
 from collections import namedtuple
-from ctoken import Mint, PriceSupplyCurve, Auction, Beneficiary
+from ctoken import Mint, PriceSupplyCurve, Beneficiary
+from auction import Auction
 from draw import draw
 
-Investment = namedtuple('Investment', 'value, valuation')
+Bid = namedtuple('Bid', 'value, valuation')
 
 
 class Simulation(object):
 
-    def __init__(self, mint, investments):
+    def __init__(self, mint, bids):
         self.mint = mint
         self.auction = mint.auction
-        self.investments = investments
+        self.bids = bids
         self.step = 10
         self.ticker = []
 
     def report(self):
         a = 'A' if self.mint.isauction else 'T'
-        s = '{}{} ask:{:.2f} bid:{:.2f} mktcap:{:,.0f}  maxvaluation:{:,.0f} valuation:{:,.0f} ' +\
+        s = '{}{} ask:{:.2f} bid:{:.2f} maxmktcap:{:,.0f}  maxvaluation:{:,.0f} valuation:{:,.0f} ' +\
             'reserve:{:,.0f} supply:{:,.0f}'
-        print s.format(a, self.auction.elapsed, self.ask, self.mint.bid, self.mint.mktcap,
+        print s.format(a, self.auction.elapsed, self.ask, self.bid, self.maxmktcap,
                        self.maxvaluation, self.mint.valuation, self.reserve,
                        self.mint.token.supply)
 
@@ -69,12 +70,16 @@ class Simulation(object):
         return self.mint.ask if self.auction.ended else self.auction.price
 
     @property
+    def bid(self):
+        return self.mint.bid if self.auction.ended else self.auction.bid
+
+    @property
     def reserve(self):
         return self.mint.reserve + self.auction.reserve
 
     @property
     def reserve_based_price(self):
-        return self.mint.curve.price_at_reserve(self.reserve) / (1 - self.mint.beneficiary.fraction)
+        return self.mint.curve.price_at_reserve(self.reserve) * self.mint.beneficiary.factor
 
     def tick(self, **kargs):
 
@@ -95,35 +100,38 @@ class Simulation(object):
         d.update(kargs)
         self.ticker.append(d)
 
-    def run_auction(self, max_elapsed):
-        while not self.auction.ended:
+    def run_auction(self, factor, const):
+        self.auction.start(factor, const)
+        print 'starting price:{} starting mktcap:{}'.format(
+            self.auction.price, self.auction.max_mktcap)
+        while not self.auction.ended and self.bids:
+            # self.report()
             self.auction.elapsed += self.step
-            # valuation = self.mint.valuation_after_create(i.value)
-            while self.investments[0].valuation > self.auction.max_valuation:  # FIXME slippage
-                i = self.investments.pop(0)
+            while self.bids and self.bids[0].valuation > self.auction.max_valuation:
+                i = self.bids.pop(0)
                 self.auction.order(i, i.value)
                 if self.auction.ended:
-                    assert self.investments, 'increase the invstable amount'
                     self.report()
                     break
                 self.report()
             self.tick()
             if not self.mint.isauction:
                 break
-        assert self.auction.ended, 'increase the invstable amount'
+        assert self.auction.ended, 'increase the total order amount'
         assert self.mint.token.supply > 0
 
     def run_trading(self, max_elapsed, stddev, final_price):
         mint = self.mint
         assert mint.token.supply > 0
         assert not mint.isauction
-        ex_price = mint.ask
-        steps = (max_elapsed - mint.auction.elapsed) / self.step
-        period_factor = final_price / mint.ask
+        ex_price = mint.auction.final_price
+        print 'trading start price', ex_price
+        start = mint.auction.elapsed
+        steps = (max_elapsed - start) / self.step
+        period_factor = final_price / mint.bid
         median = period_factor ** (1 / steps)
-
-        # while mint.auction.elapsed < max_elapsed:
-        while ex_price < final_price:
+        final_price_reached = False
+        while ex_price < final_price:  # or mint.auction.elapsed < max_elapsed:
             mint.auction.elapsed += self.step
             # random walk on valuation
             ex_price *= random.normalvariate(median, stddev)
@@ -133,50 +141,53 @@ class Simulation(object):
                 mint.buy(added_reserve, 'market buyer')
                 self.report()
             self.tick(Market_Price=ex_price)
+            # let it trade a bit longer
+            # if ex_price > final_price and not final_price_reached:
+            #     max_elapsed = (mint.auction.elapsed - start) * 1.2 + start
+            #     final_price_reached = True
+            #     print 'price target reached'
 
 
-def gen_investments(num_investors, total_investable, median_valuation, std_deviation):
-    investments = []
-    for i in range(num_investors):
-        i = Investment(value=random.paretovariate(2),
-                       valuation=random.normalvariate(median_valuation, std_deviation))
-        investments.append(i)
+def gen_bids(num_bidders, total_purchase_amount, median_valuation, std_deviation):
+    bids = []
+    for i in range(num_bidders):
+        i = Bid(value=random.paretovariate(2),
+                valuation=random.normalvariate(median_valuation, std_deviation))
+        bids.append(i)
     # norm
-    f = total_investable / sum(i.value for i in investments)
-    investments = [Investment(i.value * f, i.valuation) for i in investments]
-    investments.sort(key=attrgetter('valuation'), reverse=True)
-    assert investments[0].valuation > investments[-1].valuation
-    return investments
+    f = total_purchase_amount / sum(i.value for i in bids)
+    bids = [Bid(b.value * f, b.valuation) for b in bids]
+    bids.sort(key=attrgetter('valuation'), reverse=True)
+    assert bids[0].valuation > bids[-1].valuation
+    return bids
 
 
 def gen_token():
     curve = PriceSupplyCurve(factor=0.000001, base_price=1)
-    auction = Auction(factor=10**7, const=10**3)
-    beneficiary = Beneficiary(issuance_fraction=0.2)
+    auction = Auction()
+    beneficiary = Beneficiary(issuance_fraction=.2)
     ct = Mint(curve, beneficiary, auction)
     return ct
 
 
 def main():
-    random.seed(43)
+    random.seed(42)
     mint = gen_token()
-    num_investors = 3000
-    total_investable = 400 * 10**6
-    median_valuation = 50 * 10**6
+    num_bidders = 300
+    total_purchase_amount = 20 * 10**6
+    median_valuation = 5 * 10**6
 
     std_deviation = 0.25 * median_valuation
-    investments = gen_investments(num_investors, total_investable, median_valuation, std_deviation)
+    bids = gen_bids(num_bidders, total_purchase_amount, median_valuation, std_deviation)
 
-    sim = Simulation(mint, investments[:])
+    sim = Simulation(mint, bids[:])
 
     print 'Running Auction'
-    sim.run_auction(3600 * 48)
+    sim.run_auction(factor=10**12, const=10**3)
 
     print 'Running Trading'
-    final_mktcap = 4 * mint.mktcap
-    price_at_mktcap = mint.curve.price(mint.curve.supply_at_mktcap(final_mktcap))
-    price_at_mktcap /= (1 - mint.beneficiary.fraction)
-    sim.run_trading(mint.auction.elapsed * 2, stddev=0.005, final_price=price_at_mktcap)
+    final_price = 1.2 * sim.mint.ask
+    sim.run_trading(mint.auction.elapsed * 3, stddev=0.005, final_price=final_price)
 
     tstart = len(sim.ticker)
 
@@ -193,14 +204,14 @@ def main():
                     t[n] = 1
         print e
 
-    print 'max valuation', max(i.valuation for i in investments)
-    print 'min valuation', min(i.valuation for i in investments)
-    print 'avg valuation', sum(i.valuation for i in investments) / len(investments)
-    print 'max investment', max(i.value for i in investments)
-    print 'min investment', min(i.value for i in investments)
-    print 'not invested', len(sim.investments)
-    print len(sim.ticker)
+    print 'max valuation', max(i.valuation for i in bids)
+    print 'min valuation', min(i.valuation for i in bids)
+    print 'avg valuation', sum(i.valuation for i in bids) / len(bids)
+    print 'max order value', max(i.value for i in bids)
+    print 'min order value', min(i.value for i in bids)
+    print 'not ordered', len(sim.bids)
 
+    print 'visualizing {} ticks'.format(len(sim.ticker))
     draw(sim.ticker)
 
 if __name__ == '__main__':

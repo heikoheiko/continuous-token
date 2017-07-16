@@ -20,6 +20,7 @@ class Beneficiary(object):
 
     def __init__(self, issuance_fraction=0):
         self.fraction = issuance_fraction
+        self.factor = 1 / (1 - self.fraction)
 
 
 class Token(object):
@@ -76,6 +77,22 @@ class PriceSupplyCurve(object):
         assert price >= 0
         return self.reserve(self.supply_at_price(price))
 
+    def avg_price_at_reserve(self, reserve):
+        return reserve / self.supply(reserve)
+
+    def supply_at_avg_price(self, avg_price):
+        return (avg_price - self.b) / self.f * 2
+
+    def supply_at_avg_price_and_existing_supply(self, avg_price, s1):
+        assert avg_price >= self.price(s1)
+        return (avg_price - self.b - self.f / 2 * s1) / self.f * 2
+
+    def avg_price_at_supply(self, supply):
+        return self.b + self.f / 2 * supply
+
+    def reserve_at_avg_price(self, avg_price):
+        return self.reserve(self.supply_at_avg_price(avg_price))
+
     def cost(self, supply, num):
         return self.reserve(supply + num) - self.reserve(supply)
 
@@ -118,7 +135,7 @@ class Mint(object):
 
     def _sale_cost(self, num):  # cost
         assert num >= 0
-        added = num / (1 - self.beneficiary.fraction)
+        added = num * self.beneficiary.factor
         return self.curve.cost(self.supply_by_reserve, added)
 
     def _purchase_cost(self, num):
@@ -138,7 +155,7 @@ class Mint(object):
         return self._issue(issued, recipient)
 
     def _issue(self, num_issued, recipient):
-        num_sold = num_issued * (1 - self.beneficiary.fraction)
+        num_sold = num_issued * self.beneficiary.factor
         seigniorage = num_issued - num_sold
         self.token.issue(num_sold, recipient)
         self.token.issue(seigniorage, self.beneficiary)
@@ -186,77 +203,3 @@ class Mint(object):
     @property
     def valuation(self):  # (ask - bid) * supply
         return max(0, self.mktcap - self.reserve)
-
-
-class Auction(object):
-
-    def __init__(self, factor, const):
-        self.factor = factor
-        self.const = const
-        self.elapsed = 0
-        self.value_by_buyer = {}
-        self.ended = False
-        self.mint = None  # set by mint
-        self.reserve = 0
-
-    @property
-    def price(self):
-        return self.factor / (self.elapsed + self.const)
-
-    @property
-    def combined_reserve(self):
-        return self.reserve + self.mint.reserve
-
-    @property
-    def missing_reserve_to_end_auction(self):
-        ask_price = self.price
-        curve_price = ask_price * (1 - self.mint.beneficiary.fraction)
-        target = self.mint.curve.reserve_at_price(curve_price)
-        return max(0, target - (self.reserve + self.mint.reserve))
-
-    def order(self, recipient, value):
-        value = min(value, self.missing_reserve_to_end_auction)  # FXIME refund
-        self.value_by_buyer[recipient] = self.value_by_buyer.get(recipient, 0) + value
-        self.reserve += value
-        # print self.reserve, value, self.price
-        if self.missing_reserve_to_end_auction == 0:  # this call ended the auction
-            xassert(self.price, self._mint_ask)
-            self.finalize_auction()
-
-    @property
-    def _mint_ask(self):
-        return self.mint.curve.price_at_reserve(self.combined_reserve) \
-            / (1 - self.mint.beneficiary.fraction)
-
-    def finalize_auction(self):
-        xassert(self.price, self._mint_ask)
-        assert not self.ended  # call only once
-        self.ended = True
-        # all orders get tokens at the current price
-        price = self.price
-        total_issuance = self.mint.curve.supply(self.reserve) - self.mint.token.supply
-        print 'finalizing auction at price:{}, issuing:{:,.0f}'.format(price, total_issuance)
-
-        for recipient, value in self.value_by_buyer.items():
-            num_issued = total_issuance * value / self.reserve
-            # print num_issued, value, price
-            self.mint._issue(num_issued, recipient)
-        # transfer reserve
-        self.mint.reserve = self.reserve
-        xassert(self.mint.curve.reserve(self.mint.token.supply), self.reserve)
-        xassert(self.mint.token.supply, self.mint.curve.supply(self.reserve))
-        self.reserve = 0
-
-        xassert(self.mint.token.supply, total_issuance)
-        assert self.mint.token.supply > 0
-        print 'supply', self.mint.token.supply
-
-    @property
-    def max_mktcap(self):
-        vsupply = self.mint.curve.supply_at_price(self.price)
-        return self.price * vsupply
-
-    @property
-    def max_valuation(self):  # FIXME
-        return self.max_mktcap * self.mint.beneficiary.fraction
-        # return self.max_mktcap - self.reserve

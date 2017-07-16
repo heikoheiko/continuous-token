@@ -13,7 +13,7 @@ def draw(ticks):
         ticks = [t for t in ticks if t['Max_Valuation'] < max_mkt_cap]
     else:
         ticks_r = [t for t in ticks if t['Reserve'] > 0]
-        ticks = ticks[-int(len(ticks_r) * 1.5):]
+        ticks = ticks[-int(len(ticks_r) * 1.1):]
 
     def tdata(key):
         return [(t['time'], t[key]) for t in ticks if key in t]
@@ -39,6 +39,7 @@ def draw(ticks):
     chart('Purchase_Price')
     chart('Reserve_Based_Price')
     chart('Sale_Price')
+    chart('Market_Price')
 
     # Valuations
     chart2('MktCap')
@@ -47,8 +48,8 @@ def draw(ticks):
     chart2('Valuation')
 
     # Supplies
-    chart('Supply', traces3)
     chart('Reserve_Based_Supply', traces3)
+    chart('Supply', traces3)
 
     # Changes
     if False and MARKETSIM:

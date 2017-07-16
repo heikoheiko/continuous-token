@@ -1,7 +1,7 @@
 from __future__ import division
 
 from ctoken import Beneficiary, Auction
-from ctoken import PriceSupplyCurve, ContinuousToken, xassert
+from ctoken import PriceSupplyCurve, Mint, xassert
 
 
 def test_curve():
@@ -38,14 +38,50 @@ def test_curve():
     assert m == curve.mktcap(s)
     assert curve.supply_at_mktcap(m) == s
 
+
+def test_avg_price():
+    curve = PriceSupplyCurve(factor=0.0001, base_price=0)
+    # test avg price
+    p = 100
+    s = curve.supply_at_price(p)
+    r = curve.reserve(s)
+    avg_price = r / s
+    assert curve.supply_at_avg_price(avg_price) == s
+    assert curve.reserve_at_avg_price(avg_price) == r
+    assert curve.avg_price_at_supply(s) == avg_price
+    assert curve.avg_price_at_reserve(r) == avg_price
+
+    assert curve.supply_at_avg_price_and_existing_supply(avg_price, 0) == s
+    assert curve.supply_at_avg_price_and_existing_supply(p, s) == s
+    assert curve.supply_at_avg_price_and_existing_supply(p * 1.5, s) == 2 * s  # at zero base_price
+
+    # setup scenario where tokens exists
+    p = 100
+    s = curve.supply_at_price(p)
+    r = curve.reserve(s)
+
+    # we want to know what the missing reserve at an assumed
+    # avg_price for newly created tokens
+
+    avg_price2 = 1.5 * p
+    s2 = curve.supply_at_avg_price_and_existing_supply(avg_price2, s)
+    target = curve.reserve(s2)
+    missing = target - r
+    added_supply = s2 - s
+    added_reserve = missing
+    assert avg_price2 == added_reserve / added_supply
+    # print s, s2, avg_price2, target, r, missing
+
+
 test_curve()
+test_avg_price()
 
 
 def test_auction_sim():
     curve = PriceSupplyCurve(factor=0.0001, base_price=5)
     auction = Auction(factor=10**5, const=10**3)
     beneficiary = Beneficiary(issuance_fraction=0.2)
-    ct = ContinuousToken(curve, beneficiary, auction)
+    ct = Mint(curve, beneficiary, auction)
 
     buys = [i * 1000 for i in range(1, 10)]
     totalcost = 0
@@ -92,7 +128,7 @@ def test_auction_raw():
     curve = PriceSupplyCurve(factor=0.0001, base_price=5)
     auction = Auction(factor=10**5, const=10**3)
     beneficiary = Beneficiary(issuance_fraction=0)
-    ct = ContinuousToken(curve, beneficiary, auction)
+    ct = Mint(curve, beneficiary, auction)
     assert ct._notional_supply == 0
 
     # buy tokens
@@ -114,7 +150,7 @@ def test_auction():
     curve = PriceSupplyCurve(factor=0.0001, base_price=5)
     auction = Auction(factor=10**5, const=10**3)
     beneficiary = Beneficiary(issuance_fraction=0)
-    ct = ContinuousToken(curve, beneficiary, auction)
+    ct = Mint(curve, beneficiary, auction)
     assert ct.ask > auction.price_surcharge
     ask = ct.ask
     print 'ask', ask
@@ -150,7 +186,7 @@ def test():
     curve = PriceSupplyCurve(factor=0.0001, base_price=5)
     auction = Auction(factor=0, const=10**3)  # disabled
     beneficiary = Beneficiary(issuance_fraction=0)  # disabled
-    ct = ContinuousToken(curve, beneficiary, auction)
+    ct = Mint(curve, beneficiary, auction)
     ask = ct.ask
     assert ct._sale_cost(1) == ask
     num = 1000
@@ -181,7 +217,7 @@ def test_beneficiary():
     curve = PriceSupplyCurve(factor=0.0001, base_price=5)
     auction = Auction(factor=0, const=10**3)  # disabled
     beneficiary = Beneficiary(issuance_fraction=.20)
-    ct = ContinuousToken(curve, beneficiary, auction)
+    ct = Mint(curve, beneficiary, auction)
     ask = ct.ask
     xassert(ask, ct.curve.cost(0, 1) / (1 - beneficiary.fraction))
     assert ct._sale_cost(1) == ask
@@ -226,7 +262,7 @@ def test_auction_with_beneficiary():
     curve = PriceSupplyCurve(factor=0.0001, base_price=5)
     auction = Auction(factor=10**6, const=10**3)
     beneficiary = Beneficiary(issuance_fraction=.20)
-    ct = ContinuousToken(curve, beneficiary, auction)
+    ct = Mint(curve, beneficiary, auction)
     ask = ct.ask
     assert ct._sale_cost(1) == ask
     # buy
