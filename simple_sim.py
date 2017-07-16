@@ -40,20 +40,20 @@ class Simulation(object):
     def run_auction(self):
         print 'starting price:{:,.0f} starting mktcap:{:,.0f}'.format(
             self.auction.price, self.auction.mktcap_at_price)
-        while not self.auction.ended and self.bids:
+        while not self.auction.closing_price and self.bids:
             # self.report()
             self.auction.elapsed += self.step
             while self.bids and self.bids[0].valuation > self.auction.valuation_at_price:
                 i = self.bids.pop(0)
                 self.auction.order(i, i.value)
-                if self.auction.ended:
+                if self.auction.closing_price:
                     self.report()
                     break
                 self.report()
             self.tick()
-            if self.auction.ended:
+            if self.auction.closing_price:
                 break
-        assert self.auction.ended, 'increase the total order amount'
+        assert self.auction.closing_price, 'increase the total order amount'
         assert self.auction.token.supply > 0
 
 
