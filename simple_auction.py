@@ -48,7 +48,7 @@ class Auction(object):
 
     @property
     def bid(self):
-        return self.reserve / self.supply
+        return (self.reserve + self.pre_auction_reserve) / self.supply
 
     @property
     def mktcap_at_price(self):
@@ -56,15 +56,16 @@ class Auction(object):
 
     @property
     def valuation_at_price(self):
-        return self.mktcap_at_price - self.reserve_at_price
+        return self.mktcap_at_price - self.reserve_at_price - self.pre_auction_reserve
 
     @property
     def reserve_at_price(self):
+        "this is the required added reserve at the current price"
         return self.sold_supply * self.price
 
     @property
     def missing_reserve_to_end_auction(self):
-        return self.reserve_at_price - self.reserve
+        return max(0, self.reserve_at_price - self.reserve)
 
     def order(self, recipient, value):
         assert not self.ended
